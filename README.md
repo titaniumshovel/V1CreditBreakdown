@@ -6,24 +6,25 @@ This Python script helps identify configurations within a Trend Vision One envir
 
 ## Prerequisites
 
-*   Python 3.6+
-*   `requests` library (`pip install requests`)
+* Python 3.6+
+* `requests` library (`pip install requests`)
 
 ## Setup
 
-1.  Save the script as `credit_analyzer.py` (or any other `.py` name).
-2.  Ensure you have a Trend Vision One API Key with sufficient permissions. The required permissions for full functionality include:
-    *   **Endpoint Inventory:** View
-    *   **Datalake Pipeline:** View, filter, and search
-    *   **Observed Attack Techniques Pipeline:** View, filter, and search
-    *   **Reports (for Cyber Risk Exposure Management data):** View
-    *   **Sandbox Analysis:** View, filter, and search
+1. Save the script as `credit_analyzer.py` (or any other `.py` name).
+2. Ensure you have a Trend Vision One API Key with sufficient permissions. The required permissions for full functionality include:
+    * **Endpoint Inventory:** View
+    * **Datalake Pipeline:** View, filter, and search
+    * **Observed Attack Techniques Pipeline:** View, filter, and search
+    * **Reports (for Cyber Risk Exposure Management data):** View
+    * **Sandbox Analysis:** View, filter, and search
 
 ## Command-Line Options
-* -t <TOKEN>, --token <TOKEN>:
+
+* -t `<TOKEN>`, --token `<TOKEN>`:
 Your Trend Vision One API Key.
 If not provided, the script will prompt you to enter it.
-* -r <REGION_CODE>, --region <REGION_CODE>:
+* -r `<REGION_CODE>`, --region `<REGION_CODE>`:
 The Vision One API region to connect to.
 Choices: US, EU, SG, JP, AU, IN, UAE
 Default: US
