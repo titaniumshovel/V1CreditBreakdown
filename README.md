@@ -19,6 +19,24 @@ This Python script helps identify configurations within a Trend Vision One envir
     *   **Reports (for Cyber Risk Exposure Management data):** View
     *   **Sandbox Analysis:** View, filter, and search
 
+## Command-Line Options
+* -t <TOKEN>, --token <TOKEN>:
+Your Trend Vision One API Key.
+If not provided, the script will prompt you to enter it.
+* -r <REGION_CODE>, --region <REGION_CODE>:
+The Vision One API region to connect to.
+Choices: US, EU, SG, JP, AU, IN, UAE
+Default: US
+* -a, --all_endpoints:
+If specified, the script will attempt to fetch information for ALL endpoints for the Endpoint Security analysis.
+WARNING: This can be very time-consuming for environments with a large number of endpoints.
+Default: Checks a sample of 50 endpoints.
+* -v, --verbose:
+Enable verbose debugging output, primarily for API call and pagination details. Useful for troubleshooting.
+Default: Disabled.
+* -h, --help:
+Show the help message and exit.
+
 ## Usage
 
 The script can be run from the command line.
