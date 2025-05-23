@@ -88,7 +88,7 @@ The script prints findings to the console and logs them to a file with timestamp
 
 At the end of the run, a summary table is appended, for example:
 
-```
+```text
 Summary:
 - 3 endpoints with Pro licenses
 - 2 active Datalake pipelines

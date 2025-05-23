@@ -333,7 +333,7 @@ def check_datalake_pipelines(base_url, token, dry_run=False):
     if dry_run:
         _log_message(f"[DRY RUN] Would call: GET {base_url}/v3.0/datalake/dataPipelines")
         print_finding("Datalake Pipeline", "DRY RUN: No API call made for datalake pipeline analysis.", "INFO", findings_list=findings)
-        return findings, unique_pro_guids, sampled_count, other_licenses_summary
+        return findings
 
     pipelines_data, error = get_api_data(base_url, token, "/v3.0/datalake/dataPipelines", is_list=False)
 
