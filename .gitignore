@@ -1,0 +1,40 @@
+# Context and temporary files
+context_conversation.txt
+
+# Python cache and temporary files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Test output files
+test_export.json
+test_output.log
+*.log
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# API output files (user-generated)
+*_analysis.json
+*_findings.json
+*_export.json
+v1_credit_analyzer_log_*.txt

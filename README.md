@@ -1,186 +1,200 @@
+# Vision One Credit Usage Analyzer (Enhanced v3.0)
 
-# Trend Vision One Credit Usage Analyzer
+A comprehensive Python tool that analyzes **actual credit consumption patterns** in Trend Vision One environments through direct API usage statistics, investigation activity, and feature utilization analysis.
 
-This Python script helps identify configurations within a Trend Vision One environment that might be consuming a significant amount of service credits. It queries various API endpoints to gather information about enabled features and provides a summary with general recommendations. The script now supports early API key validation, robust retry logic, and exporting findings to a JSON file for offline analysis.
+## 🎯 What This Tool Does
 
-## ⚠️ Disclaimer
+Unlike basic configuration checkers, this analyzer provides **real insight into credit consumption** by examining:
 
-This tool provides an initial assessment based on common credit-consuming features identifiable via the public API. It does **not** calculate exact credit usage. Always consult your Trend Vision One credit usage dashboard, official Trend Micro documentation, and your account manager for precise credit details and billing information.
+- **🔍 Search Activity**: Direct analysis of data lake query volumes and patterns
+- **📊 Investigation Workload**: Alert investigation activity and impact analysis  
+- **🛡️ CREM Utilization**: Comprehensive cyber risk exposure management usage
+- **🥪 Sandbox Usage**: Precise quota tracking and submission analysis
+- **🕵️ OAT Activity**: Active threat detection and analysis patterns
+- **📈 Sensor Statistics**: Data ingestion volumes affecting search costs
 
-## Prerequisites
+## ⚠️ Important Disclaimers
 
+- **Not a billing calculator**: Provides usage insights, not exact credit calculations
+- **Assessment tool**: Helps identify high-credit areas for optimization
+- **Requires API access**: Needs Trend Vision One API key with appropriate permissions
+- **Consult official sources**: Always verify with Trend Vision One console and account manager
+
+## 🚀 Quick Start
+
+### Prerequisites
 - Python 3.7+
+- Trend Vision One API Key
 - `requests` library: `pip install requests`
 
-## Setup
-
-1. Save the Python script as `credit_analyzer.py` (or your preferred `.py` name).
-2. Ensure you have a Trend Vision One API Key with sufficient permissions.
-
-### Required API Permissions
-
-The API key requires the following permissions for full functionality:
-
-- **Endpoint Inventory:** View  
-- **Datalake Pipeline:** View, filter, and search  
-- **Observed Attack Techniques Pipeline:** View, filter, and search  
-- **Reports (for Cyber Risk Exposure Management data):** View  
-- **Sandbox Analysis:** View, filter, and search  
-
-## Usage
-
-Run the script from the command line:
-
+### Basic Usage
 ```bash
-python credit_analyzer.py [options]
+# Interactive mode (prompts for API key)
+python main.py
+
+# Specify API key and region
+python main.py -t YOUR_API_KEY -r EU
+
+# Full analysis with verbose logging
+python main.py -t YOUR_API_KEY -a -v -o detailed_analysis.log
+
+# Export findings to JSON for further analysis
+python main.py -t YOUR_API_KEY --export_json credit_analysis.json
 ```
 
-### Command-Line Options
+## 📋 Required API Permissions
 
-| Option                                        | Description                                                                                                                           |
-|----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
-| `-t <TOKEN>`, `--token <TOKEN>`              | Your Trend Vision One API Key. If not provided, the script will prompt you to enter it.                                               |
-| `-r <REGION_CODE>`, `--region <REGION_CODE>` | The Vision One API region to connect to. **Choices:** US, EU, SG, JP, AU, IN, UAE **Default:** US                                     |
-| `-a`, `--all_endpoints`                      | Fetch information for ALL endpoints for the Endpoint Security analysis. API will be queried with a page size of 200.                 |
-|                                              | ⚠️ **WARNING:** This can be very time-consuming for environments with a large number of endpoints. **Default:** Samples 50 endpoints |
-| `--sample-size <N>`                          | Number of endpoints to sample for Endpoint Security analysis. Overrides the default sample size (default: 50).                        |
-| `-v`, `--verbose`                            | Enable verbose debugging output for API calls and pagination details. Output goes to both console and log file. **Default:** Disabled |
-| `--dry-run`                                  | Show what would be called without making any API requests (for demos).                                                                |
-| `-o <FILE_PATH>`, `--output_file <FILE_PATH>`| Path to a file where full output will be logged with timestamps. **Default:** `v1_credit_analyzer_log_YYYYMMDD_HHMMSS.txt`           |
-| `--export_json <FILE_PATH>`                  | Path to a JSON file to export findings for offline analysis.                                                                          |
-| `-h`, `--help`                               | Show help message and exit.                                                                                                            |
+Your API key needs these permissions for comprehensive analysis:
 
-### Examples
+| Permission | Module | Purpose |
+|------------|--------|---------|
+| **Search** → View, filter, and search | Search Statistics | Direct credit usage tracking |
+| **Workbench** → View, filter, and search | Investigation Analysis | Alert activity patterns |
+| **Reports** → View | CREM Analysis | Risk management usage |
+| **Endpoint Inventory** → View | License Analysis | Pro-tier feature allocation |
+| **Datalake Pipeline** → View, filter, and search | Pipeline Analysis | Data ingestion tracking |
+| **Observed Attack Techniques** → View, filter, and search | OAT Analysis | Threat detection activity |
+| **Sandbox Analysis** → View, filter, and search | Sandbox Usage | File/URL analysis tracking |
 
-**Run interactively** (prompts for token, uses US region, samples endpoints):
+## 🔧 Command Line Options
 
+| Option | Description | Example |
+|--------|-------------|---------|
+| `-t`, `--token` | API key (prompted if not provided) | `-t abc123...` |
+| `-r`, `--region` | Vision One region (US/EU/SG/JP/AU/IN/UAE) | `-r EU` |
+| `-a`, `--all_endpoints` | Analyze ALL endpoints (vs sample) ⚠️ | `-a` |
+| `--sample-size N` | Custom endpoint sample size | `--sample-size 100` |
+| `-v`, `--verbose` | Enable detailed debugging | `-v` |
+| `--dry-run` | Show what would be called (demo mode) | `--dry-run` |
+| `-o FILE` | Log output to file | `-o analysis.log` |
+| `--export_json FILE` | Export findings to JSON | `--export_json results.json` |
+
+## 📊 Analysis Modules
+
+### 🔍 **Search & Data Usage Statistics** ⭐ *New*
+- **Direct credit correlation**: Actual search query volumes
+- **Sensor activity tracking**: Data ingestion patterns
+- **Time-based analysis**: 24h, 7d, 30d patterns
+- **Product breakdown**: Activity by Vision One component
+
+### 📋 **Workbench Investigation Analysis** ⭐ *New*  
+- **Alert investigation volume**: Major credit consumer
+- **Impact scope analysis**: Multi-entity investigations
+- **Severity patterns**: High-priority alert trends
+- **Investigation status tracking**: Active vs completed analysis
+
+### 🛡️ **Enhanced CREM Analysis** ⭐ *Enhanced*
+- **⚠️ Credit allocation required** (post-Nov 1, 2024)
+- **High-risk device/user analysis**: Risk scoring patterns
+- **Account compromise detection**: Identity threat analysis
+- **Attack surface discovery**: Application/asset visibility
+
+### 🥪 **Sandbox Analysis**
+- **Quota utilization**: Daily submission tracking
+- **Credit efficiency**: Analyzed vs exempted files
+- **Usage patterns**: Submission frequency analysis
+
+### 🕵️ **OAT (Observed Attack Techniques)**
+- **Detection activity**: MITRE tactic/technique coverage
+- **Endpoint coverage**: Analysis scope tracking
+- **Risk level distribution**: Detection severity patterns
+
+### 🖥️ **Endpoint Security**
+- **Pro license allocation**: Credit-consuming tier analysis
+- **Feature utilization**: Advanced capabilities usage
+- **Compliance coverage**: Enterprise vs Pro features
+
+### 📊 **Data Pipelines**
+- **Datalake pipeline status**: Data ingestion tracking
+- **OAT pipeline analysis**: Threat detection data flow
+
+## 📈 Sample Output
+
+```
+============================================================
+===== SEARCH & DATA USAGE STATISTICS ANALYSIS =====
+============================================================
+[POTENTIAL CREDIT IMPACT] Search Statistics: Activity volume (7d): 15,847 total activities
+  -> Recommendation: High search activity volumes directly correlate to credit consumption...
+
+[POTENTIAL CREDIT IMPACT] Search Statistics: Sensor activity (7d): 1,245/1,456 active sensors (85.5%)
+  -> Recommendation: Active sensors generate telemetry data that fills the data lake...
+
+============================================================
+===== WORKBENCH ALERT INVESTIGATION ANALYSIS =====
+============================================================
+[POTENTIAL CREDIT IMPACT] Workbench Analysis: Found 89 workbench alerts in the last 30 days
+  -> Recommendation: Each alert investigation involves data lake searches and analysis...
+
+[POTENTIAL CREDIT IMPACT] Workbench Analysis: 23 high/critical severity alerts requiring investigation
+  -> Recommendation: High-severity alerts typically require more extensive investigation...
+```
+
+## 🧪 Testing
+
+Run the comprehensive test suite:
 ```bash
-python credit_analyzer.py
+python test_analyzer.py
 ```
 
-**Specify token and region with verbose logging:**
+Tests cover:
+- ✅ Dry-run functionality
+- ✅ Command-line options
+- ✅ JSON export
+- ✅ Output logging  
+- ✅ Error handling
 
-```bash
-python credit_analyzer.py -t YOUR_API_KEY_HERE -r EU -v -o ./analysis_reports/eu_credit_check.log
-```
+## 🏗️ Architecture
 
-**Change the sample size for endpoint analysis:**
+### Single-File Design
+- **`main.py`**: Complete analyzer (~1400+ lines)
+- **`test_analyzer.py`**: Comprehensive test suite
+- **`CLAUDE.md`**: Development guidance for Claude Code
+- **`V3_API_ANALYSIS.md`**: Complete v3.0 API analysis reference
 
-```bash
-python credit_analyzer.py -t YOUR_API_KEY_HERE --sample-size 100
-```
+### Key Functions
+- **Direct Usage Analysis**: Search statistics, investigation tracking
+- **Enhanced CREM**: Comprehensive risk management analysis
+- **Real Credit Insights**: Actual usage patterns vs configuration inference
 
-**Check ALL endpoints** (use with caution):
+## 📚 Understanding Output
 
-```bash
-python credit_analyzer.py -t YOUR_API_KEY_HERE -a
-```
+### Severity Levels
+- **`[POTENTIAL CREDIT IMPACT]`**: Features/usage consuming credits
+- **`[CONFIGURATION DETAIL]`**: Informational findings
+- **`[API ERROR]`**: API access or permission issues
 
-**Full analysis for Japan region and export findings to JSON:**
+### Credit Correlation
+- **High search volumes** → Higher data lake credit usage
+- **Active investigations** → More search queries and analysis
+- **CREM feature usage** → Dedicated credit pool consumption (post-Nov 2024)
+- **Pro-tier licensing** → Premium feature credit allocation
 
-```bash
-python credit_analyzer.py --token YOUR_API_KEY_HERE --region JP --all_endpoints --export_json jp_full_analysis.json
-```
+## 🔒 Security & Privacy
 
-## Output
+- **Read-only analysis**: No configuration changes made
+- **API key security**: Prompted interactively if not provided
+- **Regional compliance**: Supports all Vision One regions
+- **Local processing**: All analysis performed locally
 
-The script prints findings to the console and logs them to a file with timestamps. Findings are categorized by Vision One module. If the `--export_json` option is used, all findings are also saved in structured JSON format for offline analysis or upload.
+## 📞 Support & Verification
 
-At the end of the run, a summary table is appended, for example:
+For precise credit calculations and billing:
+- **Vision One Console**: Credit usage dashboard
+- **Official Documentation**: Trend Micro credit allocation guides  
+- **Account Manager**: Billing and optimization consultation
 
-```text
-Summary:
-- 3 endpoints with Pro licenses
-- 2 active Datalake pipelines
-- 0 OAT pipelines
-- 0 CREM vulnerable devices
-- 0 CREM attack surface devices
-- 5 sandbox submissions (analyzed)
-```
+## 🤝 Contributing
 
-If you use `--dry-run`, the script will only log what would be called, without making any API requests. This is useful for demos or testing.
+This tool is designed for Vision One administrators and security teams. For issues or enhancements:
+- Review `V3_API_ANALYSIS.md` for available API improvements
+- Check `CLAUDE.md` for development guidance
+- Ensure test suite passes with `python test_analyzer.py`
 
-### Analysis Categories
+## 📄 License
 
-#### 🖥️ Endpoint Security Analysis
+Provided as-is for assessment purposes. Refer to Trend Micro's official documentation for production deployment guidance.
 
-- Checks for explicitly allocated Pro-level licenses (`creditAllocatedLicenses`)
-- Identifies specific features indicating Pro-tier usage:
-  - Integrity Monitoring
-  - Log Inspection
-  - Application Control
-  - Advanced Risk Telemetry
+---
 
-#### 📊 Datalake Pipeline Analysis
-
-- Lists active Datalake pipelines
-
-#### 🎯 Observed Attack Techniques (OAT) Pipeline Analysis
-
-- Lists active OAT pipelines
-
-#### 🛡️ Cyber Risk Exposure Management (CREM) Analysis
-
-- Checks if CREM is active via `/v3.0/asrm/securityPosture` endpoint
-- Probes `/v3.0/asrm/vulnerableDevices` for active vulnerability assessment
-- Probes `/v3.0/asrm/attackSurfaceDevices` for active attack surface discovery
-
-#### 🔍 Sandbox Analysis
-
-- Shows daily sandbox submission usage
-
-### Output Prefixes
-
-- `[POTENTIAL CREDIT IMPACT]`: Features or configurations known to consume credits  
-- `[CONFIGURATION DETAIL]`: Informational details  
-- `[API ERROR]`: Errors occurred while fetching data from the API  
-
-General recommendations are provided at the end of each analysis.
-
-## How It Works
-
-The script uses the Trend Vision One Public API (v3.0) to:
-
-1. **Validate API Key**: Before running any analysis, the script validates your API key with a lightweight endpoint to ensure it is correct and has sufficient permissions.
-2. **Fetch endpoint data** (sample or all) and check their `creditAllocatedLicenses` and security feature statuses.
-3. **List active pipelines** for Datalake and OAT that require credits.
-4. **Query CREM data** by checking security posture and related endpoints.
-5. **Analyze sandbox usage** to identify submission patterns.
-6. **Export findings**: If requested, findings are saved to a JSON file for offline review.
-
-The script highlights areas that commonly contribute to higher credit consumption based on API documentation and typical product behavior.
-
-## Reliability Features
-
-- **Early API Key Validation**: Provides immediate feedback if the key is invalid.
-- **Robust Retry Logic**: API requests retry up to 3 times with delay on transient failures. (Exponential backoff and rate limit handling are planned for future releases.)
-- **Structured Findings Export**: Use `--export_json` to save results for offline analysis or upload.
-
-## Limitations
-
-### ⚠️ Important Considerations
-
-- **No Exact Credit Calculation**: Identifies potentially credit-heavy features but doesn't calculate exact usage.
-- **API Rate Limits**: For large environments using `--all_endpoints`, the script may encounter rate limits. (Backoff logic is planned.)
-- **Scope of Analysis**: Only includes data accessible via documented API endpoints.
-- **Feature Interpretation**: "Pro" tier detection is inferred from common packaging.
-
-### Credit Calculation Complexity
-
-Exact credit calculation depends on:
-
-- Specific SKUs and tiers
-- Data volumes
-- Product configurations not fully exposed via public API
-
-## Support
-
-For precise credit details and billing information, consult:
-
-- Your Trend Vision One credit usage dashboard
-- Official Trend Micro documentation
-- Your Trend Micro account manager
-
-## License
-
-This tool is provided as-is for assessment purposes. Please refer to Trend Micro's official documentation and support channels for production use guidance.
+**🎯 Bottom Line**: This tool helps you understand *where* your Vision One credits are being consumed so you can optimize usage, right-size deployments, and make informed decisions about feature allocation.

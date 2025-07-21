@@ -86,6 +86,50 @@ def print_finding(category, message, severity="INFO", recommendation=None, findi
         })
 
 # --- Helper Functions ---
+def post_api_data(base_url, token, endpoint_path, json_body, headers_extra=None):
+    """
+    Helper function for POST requests with JSON body.
+    Returns (data, error).
+    """
+    import time
+    global VERBOSE_DEBUG
+
+    headers = {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json;charset=utf-8"
+    }
+    if headers_extra:
+        headers.update(headers_extra)
+
+    url = base_url + endpoint_path
+    
+    if VERBOSE_DEBUG:
+        _log_message(f"  [VERBOSE] post_api_data: endpoint='{endpoint_path}', body={json_body}")
+
+    tries = 0
+    while tries < 3:
+        try:
+            response = requests.post(url, headers=headers, json=json_body, timeout=45)
+            response.raise_for_status()
+            data = response.json()
+            return data, None
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                _log_message(f"  [VERBOSE] Rate limited. Retrying in {2 ** tries} seconds.")
+                time.sleep(2 ** tries)
+                tries += 1
+            else:
+                return None, f"HTTP {e.response.status_code}: {e.response.text}"
+        except requests.exceptions.RequestException as e:
+            tries += 1
+            if tries < 3:
+                _log_message(f"  [VERBOSE] Request failed: {e}. Retrying in {2 ** tries} seconds.")
+                time.sleep(2 ** tries)
+            else:
+                return None, f"Request failed after 3 attempts: {e}"
+    
+    return None, "Request failed after 3 attempts due to rate limiting"
+
 def get_api_data(base_url, token, endpoint_path, params=None, headers_extra=None, is_list=True, fetch_all=False):
     import time
     global VERBOSE_DEBUG
@@ -483,6 +527,729 @@ def check_sandbox_usage(base_url, token, dry_run=False):
                       findings_list=findings)
     else:
         print_finding("Sandbox Analysis", "Could not retrieve sandbox submission usage.", "INFO", findings_list=findings)
+    
+    return findings
+
+def check_workbench_usage(base_url, token, dry_run=False):
+    """
+    Analyzes Workbench alert history for investigation activity that consumes credits.
+    Heavy workbench usage indicates significant data lake queries and analysis.
+    """
+    findings = []
+    print_section_header("Workbench Investigation Analysis")
+    
+    if dry_run:
+        _log_message(f"[DRY RUN] Would call: POST {base_url}/v2.0/xdr/workbench/workbenches/history")
+        print_finding("Workbench Analysis", "DRY RUN: No API call made for workbench analysis.", "INFO", findings_list=findings)
+        return findings
+
+    # Get workbench history for the last 30 days
+    from datetime import datetime, timedelta, timezone
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(days=30)
+    
+    request_body = {
+        "startTime": start_time.isoformat() + "Z",
+        "endTime": end_time.isoformat() + "Z",
+        "limit": 200,
+        "offset": 0
+    }
+    
+    workbench_data, error = post_api_data(base_url, token, "/v2.0/xdr/workbench/workbenches/history", request_body)
+    
+    if error:
+        print_finding("Workbench Analysis", f"Error fetching workbench history: {error}", "ERROR", findings_list=findings)
+        return findings
+    
+    if not workbench_data or not workbench_data.get('data'):
+        print_finding("Workbench Analysis", "No workbench alert history found in the last 30 days.", "INFO", findings_list=findings)
+        return findings
+    
+    alerts = workbench_data['data']
+    total_alerts = len(alerts)
+    
+    # Analyze alert patterns
+    investigation_results = {}
+    statuses = {}
+    model_types = {}
+    
+    for alert in alerts:
+        # Count investigation results
+        inv_result = alert.get('investigationResult', 'Unknown')
+        investigation_results[inv_result] = investigation_results.get(inv_result, 0) + 1
+        
+        # Count statuses
+        status = alert.get('status', 'Unknown')
+        statuses[status] = statuses.get(status, 0) + 1
+        
+        # Count model types
+        model_type = alert.get('modelType', 'Unknown')
+        model_types[model_type] = model_types.get(model_type, 0) + 1
+    
+    # Report findings
+    print_finding("Workbench Analysis",
+                  f"Found {total_alerts} workbench alerts in the last 30 days",
+                  "WARNING" if total_alerts > 50 else "INFO",
+                  f"Each workbench investigation typically involves data lake queries that consume credits. High alert volume may indicate significant credit usage.",
+                  findings_list=findings)
+    
+    if investigation_results:
+        investigated_count = investigation_results.get('investigated', 0)
+        if investigated_count > 0:
+            print_finding("Workbench Analysis",
+                          f"{investigated_count} alerts marked as 'investigated' (requiring analysis)",
+                          "WARNING",
+                          "Investigated alerts typically require extensive data lake queries and analysis, consuming more credits per alert.",
+                          findings_list=findings)
+    
+    if model_types:
+        # Report on different model types that may have different credit impacts
+        high_impact_models = ['xes', 'rca']  # Examples of potentially high-impact model types
+        for model_type, count in model_types.items():
+            if model_type.lower() in high_impact_models and count > 0:
+                print_finding("Workbench Analysis",
+                              f"{count} alerts from '{model_type}' detection model",
+                              "WARNING",
+                              f"Advanced detection models like '{model_type}' may generate more complex investigations requiring additional credit consumption.",
+                              findings_list=findings)
+    
+    # Weekly average
+    weekly_avg = total_alerts / 4.3  # Approximate weeks in 30 days
+    if weekly_avg > 10:
+        print_finding("Workbench Analysis",
+                      f"Average of {weekly_avg:.1f} alerts per week",
+                      "WARNING",
+                      "High weekly alert volume suggests continuous investigation activity and credit consumption.",
+                      findings_list=findings)
+    
+    return findings
+
+def check_search_data_usage(base_url, token, dry_run=False):
+    """
+    Analyzes search/data usage patterns to understand data lake query consumption.
+    This provides insights into direct data lake usage which consumes credits.
+    """
+    findings = []
+    print_section_header("Search & Data Lake Usage Analysis")
+    
+    if dry_run:
+        _log_message(f"[DRY RUN] Would call: POST {base_url}/v2.0/xdr/search/data")
+        print_finding("Search Analysis", "DRY RUN: No API call made for search data analysis.", "INFO", findings_list=findings)
+        return findings
+
+    # Check recent search activity across different data sources
+    from datetime import datetime, timedelta, timezone
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(days=7)  # Last 7 days
+    
+    # Unix timestamps
+    from_timestamp = int(start_time.timestamp())
+    to_timestamp = int(end_time.timestamp())
+    
+    # Data sources that commonly consume credits
+    data_sources = [
+        {"source": "endpointActivityData", "description": "Endpoint telemetry data"},
+        {"source": "detections", "description": "Security detections"},
+        {"source": "networkActivityData", "description": "Network traffic data"},
+        {"source": "cloudActivityData", "description": "Cloud activity logs"}
+    ]
+    
+    total_searches_attempted = 0
+    successful_searches = 0
+    
+    for source_info in data_sources:
+        source = source_info["source"]
+        description = source_info["description"]
+        
+        # Simple query to check if data exists and get sample count
+        request_body = {
+            "from": from_timestamp,
+            "to": to_timestamp,
+            "source": source,
+            "query": "*",  # Simple wildcard query
+            "limit": 1,    # Just check if data exists
+            "offset": 0
+        }
+        
+        total_searches_attempted += 1
+        search_data, error = post_api_data(base_url, token, "/v2.0/xdr/search/data", request_body)
+        
+        if error:
+            if "403" in str(error) or "Forbidden" in str(error):
+                print_finding("Search Analysis", 
+                              f"No access to {description} ({source})",
+                              "INFO",
+                              f"Data source not accessible - may indicate this data source is not enabled or not licensed.",
+                              findings_list=findings)
+            else:
+                print_finding("Search Analysis", 
+                              f"Error querying {description} ({source}): {error}",
+                              "ERROR",
+                              findings_list=findings)
+        else:
+            successful_searches += 1
+            total_count = search_data.get('total_count', 0) if search_data else 0
+            
+            if total_count > 0:
+                print_finding("Search Analysis",
+                              f"{description} ({source}): {total_count:,} records available in last 7 days",
+                              "WARNING" if total_count > 100000 else "INFO",
+                              f"Large data volumes require more credits for search and analysis operations. Each search query may consume credits based on data volume processed.",
+                              findings_list=findings)
+            else:
+                print_finding("Search Analysis",
+                              f"{description} ({source}): No recent data found",
+                              "INFO",
+                              findings_list=findings)
+    
+    # Summary analysis
+    if successful_searches > 0:
+        print_finding("Search Analysis",
+                      f"Successfully queried {successful_searches}/{total_searches_attempted} data sources",
+                      "INFO" if successful_searches == total_searches_attempted else "WARNING",
+                      f"Data lake queries consume credits based on volume of data searched. Multiple active data sources indicate potential for significant credit usage during investigations.",
+                      findings_list=findings)
+    else:
+        print_finding("Search Analysis",
+                      "Unable to access any search data sources",
+                      "ERROR",
+                      "This may indicate insufficient API permissions or no data sources are currently enabled.",
+                      findings_list=findings)
+    
+    return findings
+
+def check_data_retention_models(base_url, token, dry_run=False):
+    """
+    Analyzes Detection Model Management (DMM) configurations for data retention settings.
+    Extended data retention models can consume additional credits.
+    """
+    findings = []
+    print_section_header("Data Retention Model Analysis")
+    
+    if dry_run:
+        _log_message(f"[DRY RUN] Would call: GET {base_url}/v2.0/xdr/dmm/models")
+        print_finding("DMM Analysis", "DRY RUN: No API call made for detection model analysis.", "INFO", findings_list=findings)
+        return findings
+
+    # Get all detection models
+    models_data, error = get_api_data(base_url, token, "/v2.0/xdr/dmm/models", is_list=False)
+    
+    if error:
+        print_finding("DMM Analysis", f"Error fetching detection models: {error}", "ERROR", findings_list=findings)
+        return findings
+    
+    if not models_data or not models_data.get('data'):
+        print_finding("DMM Analysis", "No detection models found.", "INFO", findings_list=findings)
+        return findings
+    
+    models = models_data['data']
+    total_models = len(models)
+    
+    # Analyze model patterns
+    enabled_models = []
+    disabled_models = []
+    risk_levels = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0}
+    product_types = {}
+    
+    for model in models:
+        model_id = model.get('id', 'Unknown')
+        model_name = model.get('name', 'Unknown')
+        enabled = model.get('enabled', False)
+        risk_level = model.get('risk', 'Unknown')
+        product = model.get('product', 'Unknown')
+        
+        if enabled:
+            enabled_models.append({"id": model_id, "name": model_name, "risk": risk_level, "product": product})
+        else:
+            disabled_models.append({"id": model_id, "name": model_name, "risk": risk_level, "product": product})
+        
+        # Count risk levels
+        if risk_level in risk_levels:
+            risk_levels[risk_level] += 1
+        
+        # Count products
+        product_types[product] = product_types.get(product, 0) + 1
+    
+    # Report findings
+    print_finding("DMM Analysis",
+                  f"Found {total_models} detection models: {len(enabled_models)} enabled, {len(disabled_models)} disabled",
+                  "INFO",
+                  findings_list=findings)
+    
+    # Analyze enabled models by risk level
+    enabled_by_risk = {}
+    for model in enabled_models:
+        risk = model['risk']
+        enabled_by_risk[risk] = enabled_by_risk.get(risk, 0) + 1
+    
+    high_risk_enabled = enabled_by_risk.get('Critical', 0) + enabled_by_risk.get('High', 0)
+    if high_risk_enabled > 0:
+        print_finding("DMM Analysis",
+                      f"{high_risk_enabled} high-risk detection models enabled ({enabled_by_risk.get('Critical', 0)} Critical, {enabled_by_risk.get('High', 0)} High)",
+                      "WARNING",
+                      "High-risk detection models typically generate more alerts and may require more data processing, leading to higher credit consumption for investigations.",
+                      findings_list=findings)
+    
+    # Analyze by product type
+    for product, count in product_types.items():
+        enabled_for_product = len([m for m in enabled_models if m['product'] == product])
+        if enabled_for_product > 0:
+            print_finding("DMM Analysis",
+                          f"{enabled_for_product}/{count} detection models enabled for {product}",
+                          "INFO" if enabled_for_product < 10 else "WARNING",
+                          f"Each enabled detection model for {product} contributes to credit consumption through alert generation and data processing.",
+                          findings_list=findings)
+    
+    # Check for potentially high-impact models
+    high_impact_keywords = ['advanced', 'behavioral', 'machine learning', 'ml', 'ai', 'correlation', 'ueba']
+    high_impact_models = []
+    
+    for model in enabled_models:
+        model_name_lower = model['name'].lower()
+        if any(keyword in model_name_lower for keyword in high_impact_keywords):
+            high_impact_models.append(model)
+    
+    if high_impact_models:
+        print_finding("DMM Analysis",
+                      f"{len(high_impact_models)} potentially high-impact detection models enabled",
+                      "WARNING",
+                      "Advanced detection models (behavioral, ML, correlation-based) typically require more data processing and may consume more credits per detection.",
+                      findings_list=findings)
+        
+        if VERBOSE_DEBUG:
+            _log_message("  High-impact models:")
+            for model in high_impact_models[:5]:  # Show first 5
+                _log_message(f"    - {model['name']} (Risk: {model['risk']}, Product: {model['product']})")
+    
+    # Overall assessment
+    if len(enabled_models) > 50:
+        print_finding("DMM Analysis",
+                      f"Large number of enabled detection models ({len(enabled_models)})",
+                      "WARNING",
+                      "High number of enabled detection models increases the likelihood of alert generation and subsequent credit consumption for investigations.",
+                      findings_list=findings)
+    
+    return findings
+
+def check_oat_detections_usage(base_url, token, dry_run=False):
+    """
+    Analyzes OAT (Observed Attack Techniques) detection activity to understand usage patterns.
+    Active OAT detections indicate ongoing analysis that consumes credits.
+    """
+    findings = []
+    print_section_header("OAT Detections Usage Analysis")
+    
+    if dry_run:
+        _log_message(f"[DRY RUN] Would call: GET {base_url}/v3.0/oat/detections")
+        print_finding("OAT Detections", "DRY RUN: No API call made for OAT detections analysis.", "INFO", findings_list=findings)
+        return findings
+
+    # Get OAT detections for the last 7 days using v3.0 API format
+    from datetime import datetime, timedelta, timezone
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(days=7)
+    
+    # ISO format for v3.0 API
+    params = {
+        'detectedStartDateTime': start_time.isoformat() + 'Z',
+        'detectedEndDateTime': end_time.isoformat() + 'Z',
+        'top': 100  # Get a sample of recent detections
+    }
+    
+    oat_data, error = get_api_data(base_url, token, "/v3.0/oat/detections", params=params, is_list=False)
+    
+    if error:
+        print_finding("OAT Detections", f"Error fetching OAT detections: {error}", "ERROR", findings_list=findings)
+        return findings
+    
+    if not oat_data:
+        print_finding("OAT Detections", "No OAT detection data available.", "INFO", findings_list=findings)
+        return findings
+    
+    detections = oat_data.get('data', [])
+    total_count = oat_data.get('totalCount', len(detections))
+    
+    if total_count == 0:
+        print_finding("OAT Detections", "No OAT detections found in the last 7 days.", "INFO", 
+                      "No recent OAT activity means no current credit consumption from OAT processing.",
+                      findings_list=findings)
+        return findings
+    
+    # Analyze detection patterns
+    risk_levels = {}
+    tactic_ids = {}
+    technique_ids = {}
+    endpoints = set()
+    
+    for detection in detections:
+        # Risk levels
+        risk_level = detection.get('riskLevel', 'Unknown')
+        risk_levels[risk_level] = risk_levels.get(risk_level, 0) + 1
+        
+        # Tactics and techniques
+        tactic_id = detection.get('tacticId', 'Unknown')
+        technique_id = detection.get('techniqueId', 'Unknown')
+        tactic_ids[tactic_id] = tactic_ids.get(tactic_id, 0) + 1
+        technique_ids[technique_id] = technique_ids.get(technique_id, 0) + 1
+        
+        # Endpoints
+        endpoint_name = detection.get('endpointName')
+        if endpoint_name:
+            endpoints.add(endpoint_name)
+    
+    # Report findings
+    print_finding("OAT Detections",
+                  f"Found {total_count:,} OAT detections in the last 7 days (showing {len(detections)} sample)",
+                  "WARNING" if total_count > 100 else "INFO",
+                  f"Each OAT detection involves analysis and correlation that consumes credits. High detection volume indicates significant credit usage.",
+                  findings_list=findings)
+    
+    # Risk level analysis
+    high_risk_count = risk_levels.get('High', 0) + risk_levels.get('Critical', 0)
+    if high_risk_count > 0:
+        print_finding("OAT Detections",
+                      f"{high_risk_count} high-risk detections ({risk_levels.get('Critical', 0)} Critical, {risk_levels.get('High', 0)} High)",
+                      "WARNING",
+                      "High-risk OAT detections typically require more extensive analysis and correlation, leading to higher credit consumption.",
+                      findings_list=findings)
+    
+    # Endpoint coverage
+    if endpoints:
+        print_finding("OAT Detections",
+                      f"OAT detections across {len(endpoints)} unique endpoints",
+                      "INFO" if len(endpoints) < 20 else "WARNING",
+                      f"Wide endpoint coverage indicates extensive OAT monitoring and analysis across your environment.",
+                      findings_list=findings)
+    
+    # Top tactics analysis
+    if tactic_ids:
+        top_tactics = sorted(tactic_ids.items(), key=lambda x: x[1], reverse=True)[:5]
+        tactics_str = ", ".join([f"{tactic}: {count}" for tactic, count in top_tactics if tactic != 'Unknown'])
+        if tactics_str:
+            print_finding("OAT Detections",
+                          f"Top MITRE tactics detected: {tactics_str}",
+                          "INFO",
+                          "Diverse tactic coverage indicates comprehensive threat detection and analysis.",
+                          findings_list=findings)
+    
+    # Activity rate assessment
+    daily_avg = total_count / 7
+    if daily_avg > 20:
+        print_finding("OAT Detections",
+                      f"High OAT detection rate: {daily_avg:.1f} detections per day on average",
+                      "WARNING",
+                      "High daily detection rates indicate continuous OAT processing and credit consumption.",
+                      findings_list=findings)
+    elif daily_avg > 5:
+        print_finding("OAT Detections",
+                      f"Moderate OAT detection rate: {daily_avg:.1f} detections per day on average",
+                      "INFO",
+                      "Regular OAT activity suggests ongoing threat analysis and moderate credit usage.",
+                      findings_list=findings)
+    
+    return findings
+
+def check_search_statistics_usage(base_url, token, dry_run=False):
+    """
+    Analyzes search activity and sensor statistics to understand data lake usage patterns.
+    These endpoints provide direct insight into credit-consuming search activities.
+    """
+    findings = []
+    print_section_header("Search & Data Usage Statistics Analysis")
+    
+    if dry_run:
+        _log_message(f"[DRY RUN] Would call: GET {base_url}/v3.0/search/activityStatistics")
+        _log_message(f"[DRY RUN] Would call: GET {base_url}/v3.0/search/sensorStatistics")
+        print_finding("Search Statistics", "DRY RUN: No API call made for search statistics analysis.", "INFO", findings_list=findings)
+        return findings
+
+    # Check activity statistics for different time periods
+    for period in ['24h', '7d', '30d']:
+        params = {'period': period}
+        
+        # Get activity statistics
+        activity_data, error = get_api_data(base_url, token, "/v3.0/search/activityStatistics", params=params, is_list=False)
+        
+        if error:
+            print_finding("Search Statistics", f"Error fetching activity statistics for {period}: {error}", "ERROR", findings_list=findings)
+            continue
+        
+        if activity_data and activity_data.get('data'):
+            data = activity_data['data']
+            
+            # Analyze activity patterns
+            total_activities = 0
+            activity_types = {}
+            
+            # Process the statistics data structure
+            for item in data if isinstance(data, list) else [data]:
+                activity_count = item.get('count', 0)
+                activity_type = item.get('type', 'unknown')
+                product_code = item.get('productCode', 'unknown')
+                
+                total_activities += activity_count
+                key = f"{product_code}_{activity_type}"
+                activity_types[key] = activity_types.get(key, 0) + activity_count
+            
+            if total_activities > 0:
+                severity = "WARNING" if total_activities > 10000 else "INFO"
+                print_finding("Search Statistics",
+                              f"Activity volume ({period}): {total_activities:,} total activities",
+                              severity,
+                              f"High search activity volumes directly correlate to credit consumption. Each search query processes data and consumes credits based on volume searched.",
+                              findings_list=findings)
+                
+                # Report top activity types
+                if activity_types:
+                    top_activities = sorted(activity_types.items(), key=lambda x: x[1], reverse=True)[:3]
+                    activities_str = ", ".join([f"{act}: {count:,}" for act, count in top_activities])
+                    print_finding("Search Statistics",
+                                  f"Top activities ({period}): {activities_str}",
+                                  "INFO",
+                                  findings_list=findings)
+        
+        # Get sensor statistics  
+        sensor_data, error = get_api_data(base_url, token, "/v3.0/search/sensorStatistics", params=params, is_list=False)
+        
+        if error:
+            print_finding("Search Statistics", f"Error fetching sensor statistics for {period}: {error}", "ERROR", findings_list=findings)
+            continue
+            
+        if sensor_data and sensor_data.get('data'):
+            sensor_info = sensor_data['data']
+            
+            # Analyze sensor data patterns
+            total_sensors = 0
+            active_sensors = 0
+            sensor_types = {}
+            
+            for item in sensor_info if isinstance(sensor_info, list) else [sensor_info]:
+                sensor_count = item.get('count', 0)
+                sensor_status = item.get('status', 'unknown')
+                sensor_product = item.get('productCode', 'unknown')
+                
+                total_sensors += sensor_count
+                if sensor_status in ['active', 'online', 'connected']:
+                    active_sensors += sensor_count
+                    
+                sensor_types[sensor_product] = sensor_types.get(sensor_product, 0) + sensor_count
+            
+            if total_sensors > 0:
+                activity_rate = (active_sensors / total_sensors) * 100 if total_sensors > 0 else 0
+                severity = "WARNING" if active_sensors > 1000 else "INFO"
+                
+                print_finding("Search Statistics",
+                              f"Sensor activity ({period}): {active_sensors:,}/{total_sensors:,} active sensors ({activity_rate:.1f}%)",
+                              severity,
+                              f"Active sensors generate telemetry data that fills the data lake, affecting search query costs. More active sensors = more data to search through.",
+                              findings_list=findings)
+    
+    return findings
+
+def check_workbench_alerts_usage(base_url, token, dry_run=False):
+    """
+    Analyzes workbench alert activity to understand investigation credit consumption.
+    Alert investigations are major consumers of search credits.
+    """
+    findings = []
+    print_section_header("Workbench Alert Investigation Analysis")
+    
+    if dry_run:
+        _log_message(f"[DRY RUN] Would call: GET {base_url}/v3.0/workbench/alerts")
+        print_finding("Workbench Analysis", "DRY RUN: No API call made for workbench alerts analysis.", "INFO", findings_list=findings)
+        return findings
+
+    # Get workbench alerts for the last 30 days
+    from datetime import datetime, timedelta, timezone
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(days=30)
+    
+    # Use TMV1-Filter header for date filtering (v3.0 API style)
+    filter_header = f"(createdDateTime ge '{start_time.isoformat()}Z') and (createdDateTime le '{end_time.isoformat()}Z')"
+    headers_extra = {"TMV1-Filter": filter_header}
+    params = {"top": 200}  # Get up to 200 recent alerts
+    
+    alerts_data, error = get_api_data(base_url, token, "/v3.0/workbench/alerts", 
+                                     params=params, headers_extra=headers_extra, is_list=True, fetch_all=False)
+    
+    if error:
+        print_finding("Workbench Analysis", f"Error fetching workbench alerts: {error}", "ERROR", findings_list=findings)
+        return findings
+    
+    if not alerts_data:
+        print_finding("Workbench Analysis", "No workbench alerts found in the last 30 days.", "INFO", 
+                      "No recent alert activity means minimal investigation-related credit consumption.",
+                      findings_list=findings)
+        return findings
+    
+    # Analyze alert patterns
+    total_alerts = len(alerts_data)
+    severity_counts = {}
+    status_counts = {}
+    impact_scores = []
+    
+    for alert in alerts_data:
+        severity = alert.get('severity', 'unknown')
+        status = alert.get('investigationStatus', 'unknown')
+        impact = alert.get('impactScope', {})
+        
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        status_counts[status] = status_counts.get(status, 0) + 1
+        
+        # Calculate impact score (more entities = more investigation work = more credits)
+        entities = impact.get('entityCount', 0) if isinstance(impact, dict) else 0
+        if entities > 0:
+            impact_scores.append(entities)
+    
+    # Report findings
+    print_finding("Workbench Analysis",
+                  f"Found {total_alerts} workbench alerts in the last 30 days",
+                  "WARNING" if total_alerts > 100 else "INFO",
+                  f"Each alert investigation involves data lake searches and analysis. High alert volumes indicate significant investigation-related credit consumption.",
+                  findings_list=findings)
+    
+    # Severity analysis
+    high_severity = severity_counts.get('high', 0) + severity_counts.get('critical', 0)
+    if high_severity > 0:
+        print_finding("Workbench Analysis",
+                      f"{high_severity} high/critical severity alerts requiring investigation",
+                      "WARNING",
+                      "High-severity alerts typically require more extensive investigation, leading to increased data lake queries and credit consumption.",
+                      findings_list=findings)
+    
+    # Investigation status analysis
+    investigated = status_counts.get('investigated', 0) + status_counts.get('inProgress', 0)
+    if investigated > 0:
+        print_finding("Workbench Analysis",
+                      f"{investigated} alerts currently under investigation or completed",
+                      "WARNING" if investigated > 20 else "INFO",
+                      "Active investigations involve continuous data lake searches, timeline analysis, and entity correlation - all consuming search credits.",
+                      findings_list=findings)
+    
+    # Impact scope analysis
+    if impact_scores:
+        avg_impact = sum(impact_scores) / len(impact_scores)
+        max_impact = max(impact_scores)
+        
+        if avg_impact > 10:
+            print_finding("Workbench Analysis",
+                          f"High impact alerts: average {avg_impact:.1f} entities per alert (max: {max_impact})",
+                          "WARNING",
+                          "High-impact alerts affect many entities, requiring broader searches across multiple data sources and increasing credit consumption.",
+                          findings_list=findings)
+    
+    # Weekly average
+    weekly_avg = total_alerts / 4.3  # Approximate weeks in 30 days
+    if weekly_avg > 25:
+        print_finding("Workbench Analysis",
+                      f"High alert generation rate: {weekly_avg:.1f} alerts per week on average",
+                      "WARNING",
+                      "High weekly alert rates suggest continuous investigation activity and sustained credit consumption for alert analysis.",
+                      findings_list=findings)
+    
+    return findings
+
+def check_enhanced_asrm_usage(base_url, token, dry_run=False):
+    """
+    Enhanced ASRM analysis including high-risk devices and users.
+    IMPORTANT: These endpoints require CREM credit allocation after November 1, 2024.
+    """
+    findings = []
+    print_section_header("Enhanced CREM (Cyber Risk Exposure Management) Analysis")
+    
+    if dry_run:
+        _log_message(f"[DRY RUN] Would call: GET {base_url}/v3.0/asrm/highRiskDevices")
+        _log_message(f"[DRY RUN] Would call: GET {base_url}/v3.0/asrm/highRiskUsers")
+        _log_message(f"[DRY RUN] Would call: GET {base_url}/v3.0/asrm/accountCompromiseIndicators")
+        print_finding("Enhanced CREM", "DRY RUN: No API call made for enhanced CREM analysis.", "INFO", findings_list=findings)
+        return findings
+
+    # Important credit impact notice
+    print_finding("Enhanced CREM", 
+                  "⚠️  IMPORTANT: CREM features require credit allocation after November 1, 2024",
+                  "WARNING",
+                  "All CREM endpoints analyzed below consume credits from your allocated CREM credit pool. Monitor usage carefully.",
+                  findings_list=findings)
+
+    # Check high-risk devices
+    params = {"top": 100}  # Sample of high-risk devices
+    high_risk_devices, error = get_api_data(base_url, token, "/v3.0/asrm/highRiskDevices", params=params, is_list=True, fetch_all=False)
+    
+    if error:
+        print_finding("Enhanced CREM", f"Error fetching high-risk devices: {error}", "ERROR", 
+                      "This may indicate CREM is not enabled or insufficient API permissions.",
+                      findings_list=findings)
+    elif high_risk_devices:
+        device_count = len(high_risk_devices)
+        
+        # Analyze risk scores
+        risk_scores = [device.get('riskScore', 0) for device in high_risk_devices if device.get('riskScore')]
+        avg_risk = sum(risk_scores) / len(risk_scores) if risk_scores else 0
+        max_risk = max(risk_scores) if risk_scores else 0
+        
+        print_finding("Enhanced CREM",
+                      f"Found {device_count} high-risk devices (avg risk: {avg_risk:.1f}, max: {max_risk})",
+                      "WARNING" if device_count > 20 else "INFO",
+                      f"Each high-risk device requires ongoing risk assessment and monitoring, consuming CREM credits. Regular risk scoring and analysis contribute to credit usage.",
+                      findings_list=findings)
+    else:
+        print_finding("Enhanced CREM", "No high-risk devices found.", "INFO", findings_list=findings)
+    
+    # Check high-risk users
+    high_risk_users, error = get_api_data(base_url, token, "/v3.0/asrm/highRiskUsers", params=params, is_list=True, fetch_all=False)
+    
+    if error:
+        print_finding("Enhanced CREM", f"Error fetching high-risk users: {error}", "ERROR", findings_list=findings)
+    elif high_risk_users:
+        user_count = len(high_risk_users)
+        
+        # Analyze user risk patterns
+        user_risk_scores = [user.get('riskScore', 0) for user in high_risk_users if user.get('riskScore')]
+        avg_user_risk = sum(user_risk_scores) / len(user_risk_scores) if user_risk_scores else 0
+        
+        print_finding("Enhanced CREM",
+                      f"Found {user_count} high-risk users (avg risk: {avg_user_risk:.1f})",
+                      "WARNING" if user_count > 10 else "INFO",
+                      f"High-risk user analysis involves behavioral monitoring and identity risk assessment, consuming CREM credits for continuous evaluation.",
+                      findings_list=findings)
+    else:
+        print_finding("Enhanced CREM", "No high-risk users found.", "INFO", findings_list=findings)
+    
+    # Check account compromise indicators
+    account_indicators, error = get_api_data(base_url, token, "/v3.0/asrm/accountCompromiseIndicators", params=params, is_list=True, fetch_all=False)
+    
+    if error:
+        print_finding("Enhanced CREM", f"Error fetching account compromise indicators: {error}", "ERROR", findings_list=findings)
+    elif account_indicators:
+        indicator_count = len(account_indicators)
+        
+        # Analyze compromise indicators
+        severity_counts = {}
+        for indicator in account_indicators:
+            severity = indicator.get('severity', 'unknown')
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        
+        high_severity = severity_counts.get('high', 0) + severity_counts.get('critical', 0)
+        
+        print_finding("Enhanced CREM",
+                      f"Found {indicator_count} account compromise indicators ({high_severity} high/critical)",
+                      "WARNING" if high_severity > 5 else "INFO",
+                      f"Account compromise detection involves continuous monitoring of user behavior and identity patterns, consuming CREM credits for analysis and correlation.",
+                      findings_list=findings)
+    else:
+        print_finding("Enhanced CREM", "No account compromise indicators found.", "INFO", findings_list=findings)
+    
+    # Additional attack surface analysis
+    attack_surface_apps, error = get_api_data(base_url, token, "/v3.0/asrm/attackSurfaceLocalApps", params=params, is_list=True, fetch_all=False)
+    
+    if not error and attack_surface_apps:
+        apps_count = len(attack_surface_apps)
+        print_finding("Enhanced CREM",
+                      f"Found {apps_count} applications in attack surface analysis",
+                      "INFO" if apps_count < 50 else "WARNING",
+                      f"Attack surface discovery continuously scans for exposed applications and services, consuming CREM credits for comprehensive asset visibility.",
+                      findings_list=findings)
+    
     return findings
 
 # --- Main Application ---
@@ -562,7 +1329,7 @@ def main():
     _log_message("Always cross-reference with official Trend Micro documentation and your account manager for precise credit details.\n")
 
     api_key_token = args.token
-    if not api_key_token:
+    if not api_key_token and not DRY_RUN:
         print("Enter your Trend Vision One API Key: ", end="")
         sys.stdout.flush() 
         api_key_token = input().strip()
@@ -572,6 +1339,9 @@ def main():
             if LOG_FILE_HANDLER: LOG_FILE_HANDLER.close()
             return
         if LOG_FILE_HANDLER: _log_message("[INFO] API Key provided via prompt.")
+    elif DRY_RUN and not api_key_token:
+        api_key_token = "DUMMY_TOKEN_FOR_DRY_RUN"
+        _log_message("[INFO] Using dummy token for dry-run mode.")
 
     selected_region_code = args.region
     base_url = SERVERS.get(selected_region_code)
@@ -598,6 +1368,12 @@ def main():
     findings += check_oat_pipelines(base_url, api_key_token, dry_run=DRY_RUN) or []
     findings += check_attack_surface_discovery_usage(base_url, api_key_token, dry_run=DRY_RUN) or []
     findings += check_sandbox_usage(base_url, api_key_token, dry_run=DRY_RUN) or []
+    findings += check_oat_detections_usage(base_url, api_key_token, dry_run=DRY_RUN) or []
+    
+    # New v3.0 API improvements for better credit analysis
+    findings += check_search_statistics_usage(base_url, api_key_token, dry_run=DRY_RUN) or []
+    findings += check_workbench_alerts_usage(base_url, api_key_token, dry_run=DRY_RUN) or []
+    findings += check_enhanced_asrm_usage(base_url, api_key_token, dry_run=DRY_RUN) or []
 
     print_section_header("Analysis Complete - General Recommendations")
     _log_message("- Review the findings above and compare them with your organization's security needs.")
